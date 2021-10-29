@@ -1,0 +1,69 @@
+# Ineqaulity task - week 4
+
+## Reproduce 
+
+### package versions
+
+```{r}
+# i have taken a snapshot with
+#renv::snapshot()
+
+#install the same packages
+#renv::restore()
+```
+### Read in data:
+
+Located within the Data folder:
+
+* HDI data from: http://hdr.undp.org/en/indicators/68606#
+* Shapefile from: https://hub.arcgis.com/datasets/2b93b06dc0dc4e809d3c8db5cb96ba69_0/explore?location=-2.688200%2C0.000000%2C1.41 
+
+## Load packages
+```{r}
+library(tidyverse)
+library(sf)
+library(here)
+library(janitor)
+library(countrycode)
+```
+
+```{r}
+HDI <- read_csv(here::here("Data", "Gender Inequality Index (GII).csv"),
+                       locale = locale(encoding = "latin1"),
+                       na = "..", skip=5)
+World <- st_read(here::here("Data", "World_Countries__Generalized_.shp"))
+```
+
+## Column names
+
+Select columns we want and change country name to country code, using the `countrycode` package
+
+We could also just join it without this on the country name column 
+
+```{r}
+HDIcols<- HDI %>%
+  clean_names()%>%
+  select(country, x2019, x2010)%>%
+  mutate(difference=x2019-x2010)%>%
+  slice(1:189,)%>%
+  mutate(iso_code=countrycode(HDIcols$country, origin = 'country.name', destination = 'iso2c'))
+
+#this was just a test. 
+#t <- countrycode(HDIcols$country, origin = 'country.name', destination = 'iso2c') 
+
+```
+
+## Join
+
+Join the csv to world shape file
+
+```{r}
+Join_HDI <- World %>% 
+  clean_names() %>%
+  left_join(., 
+            HDIcols,
+            by = c("aff_iso" = "iso_code"))
+```
+
+...next time 
+
