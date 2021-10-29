@@ -85,7 +85,11 @@ Join_HDI <- World %>%
 Delete the columns which has "N/A" or other useless data
 ```{r}
 Join_HDI_tidy <- Join_HDI %>%
-  filter(difference != "NA")  #剔除无用数据
+  filter(difference != "NA")%>%  #剔除无用数据
+  #filter(country.x != "Saudi Arabia")%>%
+  #filter(country.x != "Qatar")%>%
+  filter(country.x != "Tonga")
+
 ```
 
 ...next time 
@@ -101,15 +105,30 @@ tmapJoin_HDI_tidy <- Join_HDI_tidy %>%
 tm_shape(tmapJoin_HDI_tidy)+
   tm_rgb()+
   tm_shape(Join_HDI_tidy) + 
-  tm_polygons("difference", 
+  tm_polygons("difference",
+              n = 10,
               style="pretty",
               palette="YlOrBr",
-              midpoint=NA,
+              midpoint=0.0,
               title="Difference in GII",
-              alpha = 0.6) + 
+              alpha = 1) + 
   tm_compass(position = c("left", "bottom"),type = "arrow") + 
   tm_scale_bar(position = c("left", "bottom")) +
   tm_layout(title = "Gender Inequality Index Difference Between 2010 and 2019", legend.position = c("right", "bottom"))
+
+tm_shape(tmapJoin_HDI_tidy)+
+  tm_rgb()+
+  tm_shape(Join_HDI_tidy) + 
+  tm_polygons("x2019",
+              n = 10,
+              style="pretty",
+              palette="YlOrBr",
+              midpoint=NA,
+              title="GII",
+              alpha = 1) + 
+  tm_compass(position = c("left", "bottom"),type = "arrow") + 
+  tm_scale_bar(position = c("left", "bottom")) +
+  tm_layout(title = "Gender Inequality Index in 2019", legend.position = c("right", "bottom"))
 ```
 
 
