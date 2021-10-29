@@ -6,10 +6,11 @@
 
 ```{r}
 # i have taken a snapshot with
-#renv::snapshot()
+install.packages("renv")
+renv::snapshot()
 
 #install the same packages
-#renv::restore()
+renv::restore()
 ```
 ### Read in data:
 
@@ -25,12 +26,28 @@ library(sf)
 library(here)
 library(janitor)
 library(countrycode)
+library(Rcpp)
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+library(sp)
+library(rgeos)
+library(tmap)
+library(tmaptools)
+library(sf)
+library(rgdal)
+library(geojsonio)
+library(readr)
+library(tidyverse)
+library(janitor)
+library(OpenStreetMap)
+
 ```
 
 ```{r}
 HDI <- read_csv(here::here("Data", "Gender Inequality Index (GII).csv"),
                        locale = locale(encoding = "latin1"),
-                       na = "..", skip=5)
+                       na = "..", skip=0)
 World <- st_read(here::here("Data", "World_Countries__Generalized_.shp"))
 ```
 
@@ -45,8 +62,7 @@ HDIcols<- HDI %>%
   clean_names()%>%
   select(country, x2019, x2010)%>%
   mutate(difference=x2019-x2010)%>%
-  slice(1:189,)%>%
-  mutate(iso_code=countrycode(HDIcols$country, origin = 'country.name', destination = 'iso2c'))
+  mutate(iso_code=countrycode(country, origin = 'country.name', destination = 'iso2c'))
 
 #this was just a test. 
 #t <- countrycode(HDIcols$country, origin = 'country.name', destination = 'iso2c') 
@@ -64,6 +80,36 @@ Join_HDI <- World %>%
             HDIcols,
             by = c("aff_iso" = "iso_code"))
 ```
+## Clean data
+
+Delete the columns which has "N/A" or other useless data
+```{r}
+Join_HDI_tidy <- Join_HDI %>%
+  filter(difference != "NA")  #剔除无用数据
+```
 
 ...next time 
+```{r}
+tmap_mode("plot")
+qtm(Join_HDI_tidy, 
+    fill = "difference")
+
+tmapJoin_HDI_tidy <- Join_HDI_tidy %>%
+  st_bbox(.) %>% 
+  tmaptools::read_osm(., type = "osm", zoom = NULL)
+
+tm_shape(tmapJoin_HDI_tidy)+
+  tm_rgb()+
+  tm_shape(Join_HDI_tidy) + 
+  tm_polygons("difference", 
+              style="pretty",
+              palette="YlOrBr",
+              midpoint=NA,
+              title="Difference in GII",
+              alpha = 0.6) + 
+  tm_compass(position = c("left", "bottom"),type = "arrow") + 
+  tm_scale_bar(position = c("left", "bottom")) +
+  tm_layout(title = "Gender Inequality Index Difference Between 2010 and 2019", legend.position = c("right", "bottom"))
+```
+
 
