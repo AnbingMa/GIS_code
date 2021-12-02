@@ -1,0 +1,134 @@
+# Ineqaulity task - week 4
+
+## Reproduce 
+
+### package versions
+
+```{r}
+# i have taken a snapshot with
+install.packages("renv")
+renv::snapshot()
+
+#install the same packages
+renv::restore()
+```
+### Read in data:
+
+Located within the Data folder:
+
+* HDI data from: http://hdr.undp.org/en/indicators/68606#
+* Shapefile from: https://hub.arcgis.com/datasets/2b93b06dc0dc4e809d3c8db5cb96ba69_0/explore?location=-2.688200%2C0.000000%2C1.41 
+
+## Load packages
+```{r}
+library(tidyverse)
+library(sf)
+library(here)
+library(janitor)
+library(countrycode)
+library(Rcpp)
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+library(sp)
+library(rgeos)
+library(tmap)
+library(tmaptools)
+library(sf)
+library(rgdal)
+library(geojsonio)
+library(readr)
+library(tidyverse)
+library(janitor)
+library(OpenStreetMap)
+
+```
+
+```{r}
+HDI <- read_csv(here::here("Data", "Gender Inequality Index (GII).csv"),
+                       locale = locale(encoding = "latin1"),
+                       na = "..", skip=0)
+World <- st_read(here::here("Data", "World_Countries__Generalized_.shp"))
+```
+
+## Column names
+
+Select columns we want and change country name to country code, using the `countrycode` package
+
+We could also just join it without this on the country name column 
+
+```{r}
+HDIcols<- HDI %>%
+  clean_names()%>%
+  select(country, x2019, x2010)%>%
+  mutate(difference=x2019-x2010)%>%
+  mutate(iso_code=countrycode(country, origin = 'country.name', destination = 'iso2c'))
+
+#this was just a test. 
+#t <- countrycode(HDIcols$country, origin = 'country.name', destination = 'iso2c') 
+
+```
+
+## Join
+
+Join the csv to world shape file
+
+```{r}
+Join_HDI <- World %>% 
+  clean_names() %>%
+  left_join(., 
+            HDIcols,
+            by = c("aff_iso" = "iso_code"))
+```
+## Clean data
+
+Delete the columns which has "N/A" or other useless data
+```{r}
+Join_HDI_tidy <- Join_HDI %>%
+  filter(difference != "NA")%>%  #剔除无用数据
+  #filter(country.x != "Saudi Arabia")%>%
+  #filter(country.x != "Qatar")%>%
+  filter(country.x != "Tonga")
+
+```
+
+...next time 
+```{r}
+tmap_mode("plot")
+qtm(Join_HDI_tidy, 
+    fill = "difference")
+
+tmapJoin_HDI_tidy <- Join_HDI_tidy %>%
+  st_bbox(.) %>% 
+  tmaptools::read_osm(., type = "osm", zoom = NULL)
+
+tm_shape(tmapJoin_HDI_tidy)+
+  tm_rgb()+
+  tm_shape(Join_HDI_tidy) + 
+  tm_polygons("difference",
+              n = 10,
+              style="pretty",
+              palette="YlOrBr",
+              midpoint=0.0,
+              title="Difference in GII",
+              alpha = 1) + 
+  tm_compass(position = c("left", "bottom"),type = "arrow") + 
+  tm_scale_bar(position = c("left", "bottom")) +
+  tm_layout(title = "Gender Inequality Index Difference Between 2010 and 2019", legend.position = c("right", "bottom"))
+
+tm_shape(tmapJoin_HDI_tidy)+
+  tm_rgb()+
+  tm_shape(Join_HDI_tidy) + 
+  tm_polygons("x2019",
+              n = 10,
+              style="pretty",
+              palette="YlOrBr",
+              midpoint=NA,
+              title="GII",
+              alpha = 1) + 
+  tm_compass(position = c("left", "bottom"),type = "arrow") + 
+  tm_scale_bar(position = c("left", "bottom")) +
+  tm_layout(title = "Gender Inequality Index in 2019", legend.position = c("right", "bottom"))
+```
+
+
