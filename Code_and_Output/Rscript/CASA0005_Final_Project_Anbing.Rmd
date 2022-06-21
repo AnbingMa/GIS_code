@@ -1,0 +1,315 @@
+---
+title: "CASA0005_Final_Exam"
+author: Anbing Ma
+- |
+    | Student number: 20041465
+date: "`r format(Sys.time(), '%X, %d %B, %Y')`"
+output: html_document
+---
+# Originality declaration  
+
+I, [**Anbing Ma**], confirm that the work presented in this assessment is my own. Where information has been derived from other sources, I confirm that this has been indicated in the work.
+
+date: `r format(Sys.time(), '%d %B, %Y')`
+
+# Initial project scope
+
+* Research Question: Whether regional differences in dietary habits contribute to regional differences in obesity rates.
+
+* Hypothesis: More sugar consumed in an area, higher the percentage of obesity in that area.
+
+* Data Biography: Two main data sets are required for my analysis. MOSA Altas contains data on obesity rate in London, from London Datastore(https://data.london.gov.uk/dataset/msoa-atlas). This dataset contains 207 columns and 985 rows, where each row represents a MSOA area with columns holding different information such as population, age structure and obesity. Since this dataset only contains obesity rate in 2008, I will narrow down down the search to only 2008. I will use different functions in R like filter(), dplyr::select() to clean this data. The other  data set provide a file containing the aggregated information on food purchases, enriched with information coming from the census. No missing data values(e.g. NA) are present. 
+
+* Research Route: First, I will make some thematic map to show obesity rate and sugar consumption in each LSOA area, and then compare these maps to find out if they show the same patterns.Second, I will do a single linear regression to further explore the relationship between the obesity and sugar consumption. Third, I will analyse spatial autocorrelation of obesity in London in order to investigate whether the obesity distributes randomly or it exhibit some kind of dispersed or cluster pattern. 
+
+* Constrains:
+ * Only choose one variable: sugar
+ * The data is not up to date
+ * Only focus one grocery: Tesco
+ 
+# Code section1: Thematic map of sugar consumption
+
+## 1 Preperation
+
+```{r}
+# Load packages
+library(here)
+library(janitor)
+library(dplyr)
+library(tidyverse)
+library(tmap)
+library(rgdal)
+library(broom)
+library(mapview)
+library(crosstalk)
+library(sf)
+library(sp)
+library(spdep)
+library(car)
+library(fs)
+library(spatstat)
+library(rgeos)
+library(maptools)
+library(GISTools)
+library(geojson)
+library(geojsonio)
+library(tmaptools)
+library(broom)
+```
+
+## 2 Data Wrangling
+
+Before read spatial data in R, I open it with QGIS to check this data. It looks great. I also open "msoa-data.csv" with Excel, and I found the last row is useless. I delete this row of data directly in Excel since it is difficult to skip the last row when reading csv data in R.
+
+```{r}
+
+# read London MSOA shapefile data
+shape_msoa <- st_read(here::here("Data", "statistical-gis-boundaries-london","ESRI", "MSOA_2011_London_gen_MHW.shp")) %>%
+  # transform the crs
+  st_transform(., 27700) %>%
+  clean_names()
+
+# check data
+qtm(shape_msoa)
+
+
+# read csv data that contains obesity
+obesity_msoa <- read_csv(here::here("Data", "msoa-data.csv")) %>%
+  clean_names()
+
+# read csv data that contains sugar consumption
+sugar_consumption <- read_csv(here::here("Data",  "7796666", "year_msoa_grocery.csv")) %>%
+  clean_names()
+
+# join obesity to shape
+obesity_msoa_map <- shape_msoa%>%
+  left_join(.,
+            obesity_msoa,
+            by = c("msoa11cd" = "middle_super_output_area"))
+
+# join sugar to shape
+OB_SU_map <- obesity_msoa_map %>%
+  left_join(.,
+            sugar_consumption,
+            by = c("msoa11cd" = "area_id")) %>%
+  #select useful columns and a trick way to rename the column name
+  mutate(obesity_rate = obesity_percentage_of_the_population_aged_16_with_a_bmi_of_30_modelled_estimate_2006_2008) %>%
+  dplyr::select(msoa11cd, msoa11nm, obesity_rate, sugar)
+  
+```
+
+## 3 Plot the map
+
+```{r}
+
+# set breaks
+breaks1 = c(8,12,16,20)
+breaks2 = c(8,10,12,14,16,18,20)
+
+# plot the thematic map
+tmap_mode("plot")
+# use breaks1
+tm_shape(OB_SU_map) +
+  tm_polygons("sugar",
+              style = "fixed",
+              breaks = breaks1,
+              palette = "PuRd",
+              midpoint = NA,
+              title = "Sugar consumption",
+              alpha = 0.5) +
+  # add a compass
+  tm_compass(position = c("left", "bottom"),type = "arrow") +
+  # add a scale bar
+  tm_scale_bar(position = c("left", "bottom")) +
+  # add a lengend
+  tm_layout(title = "Sugar Consumption", legend.position = c("right", "bottom"))
+ 
+# use breaks2 
+tm_shape(OB_SU_map) +
+  tm_polygons("sugar",
+              style = "fixed",
+              breaks = breaks2,
+              palette = "PuRd",
+              midpoint = NA,
+              title = "Sugar consumption",
+              alpha = 0.5) +
+  # add a compass
+  tm_compass(position = c("left", "bottom"),type = "arrow") +
+  # add a scale bar
+  tm_scale_bar(position = c("left", "bottom")) +
+  # add a lengend
+  tm_layout(title = "Sugar Consumption", legend.position = c("right", "bottom"))
+```
+
+This map show the consumption in each MSOA area. In order to highlighting the high value of sugar consumption in some area, I  use 2 kinds of breaks to classify values. According to this map, it looks like that people who live in non-central area in London consume more sugar than others.
+
+```{r}
+# make a choropleth map of obesity
+tmap_mode("plot")
+tm_shape(OB_SU_map) + 
+  tm_polygons("obesity_rate", 
+               style = "pretty", 
+               midpoint = NA, 
+               popup.vars = c("namelsad10", "density"), 
+               title = "Obesity Rate") +
+    # add a compass
+    tm_compass(position = c("left", "bottom"),type = "arrow") +
+    # add a scale bar
+    tm_scale_bar(position = c("left", "bottom")) +
+    # add a lengend
+    tm_layout(title = "Obesity Rate", legend.position = c("right", "bottom"))
+```
+From the map above, it looks like Obesity rates are lower in central London than on the edge of London. It share the same patterns with sugar consumption in London. Therefore, in order to further investigate the relationship between obesity rate and sugar consumption, I will build a single linear regression model to analyse it.
+
+# Code seciton2: Single Linear Regression
+
+```{r}
+# first draw a scatter plot to show the linear relationship
+q <- qplot(x = `sugar`,
+           y = `obesity_rate`,
+           data = OB_SU_map)
+# plot with a regression line
+q + stat_smooth(method="lm", se=FALSE, size=1) + 
+  geom_jitter()
+
+# then build a regression model
+regression_model <- OB_SU_map %>%
+  lm(obesity_rate ~ sugar, data = .)
+
+# show the tidy result
+summary(regression_model)
+tidy(regression_model)
+
+```
+* Regression results explainnations:
+  * R-squared = 0.2587, which means that around 26% of the variation in obesity rate can be explained. Since I only use one independent variable in this model, this R-squared is good enough. In other words, this is a good model.
+  * The coefficient of sugar is 2.6365. It means that there is a positive correlation between obesity rate and sugar consumption. In other words, more sugar consumed in an area, higher the percentage of obesity in that area, which is same to my hypothesis.
+  * Coefficient p-value - Pr(>|t|) is extrmely small. As a rule of thumb, the smaller the p-value, the more significant that variable is in the story and the smaller the chance that the relationship being observed is just random. Therefore, this result confirm that sugar consumption has a significant impact on obesity rate.
+  
+This analysis should have ended here. However, from the maps in section 1, it looks as though we might have some clustering of obesity rate in the edge of London. Therefore, I will check this with Moran's I to probably gain more detailed results.
+
+# Code section 3: Spatial Autocorrelation Analysis
+
+```{r}
+# calculate the centroids of all MSOAs
+centriods <- OB_SU_map %>%
+  st_centroid() %>%
+  st_geometry()
+
+# check data
+plot(centriods, axes = TRUE)
+
+# create a neighborhood list
+L_msoa_nb <- OB_SU_map %>%
+  #use Queens case; ps: Rook: only share boundaries, Queen: share boundaries or points
+  poly2nb(.,queen = T)
+
+summary(L_msoa_nb)
+# plot them
+plot(L_msoa_nb, st_geometry(centriods),col="red")
+
+# create a spatial weight list
+L_msoa.lw <- L_msoa_nb %>%
+  nb2listw(., style = "C",zero.policy = TRUE) # C is globally standardised (sums over all links to n)
+set.ZeroPolicyOption(TRUE)
+
+# calculate global Moran's I
+I_msoa_Global_Obesity <- OB_SU_map %>%
+  pull(obesity_rate) %>%
+  as.vector() %>%
+  moran.test(., L_msoa.lw)
+
+# calculate Geary’s C
+C_msoa_Global_Obesity <- OB_SU_map %>%
+  pull(obesity_rate) %>%
+  as.vector() %>%
+  geary.test(., L_msoa.lw)
+
+# calculate Getis Ord General G
+G_msoa_Global_Obesity <- OB_SU_map %>%
+  pull(obesity_rate) %>%
+  as.vector() %>%
+  globalG.test(., L_msoa.lw)
+
+# show the results
+I_msoa_Global_Obesity
+C_msoa_Global_Obesity
+G_msoa_Global_Obesity
+```
+
+So the global statistics are indicating that obestiy rate has a faintspatial autocorrelation:
+
+The Moran’s I statistic = 0.04 (1 = clustered, 0 = no pattern, -1 = dispersed) which shows that it has some clustering
+
+The Geary’s C statistic = 0.01 (Geary’s C falls between 0 and 2; 1 means no spatial autocorrelation, <1 - positive spatial autocorrelation or similar values clustering, >1 - negative spatial autocorreation or dissimilar values clustering) which shows that similar values are clustering
+
+The General G statistic = 2.187782e-02 < expected, so low values are tending to cluster.
+
+Now it's time to calculate local versions of the Moran’s I statistic (for each MSOA) to see where we have hot-spots or cold-spots.
+
+```{r}
+# calculate Local Moran'I for each MSOA
+I_msoa_Local_Obesity <- OB_SU_map %>%
+  pull(obesity_rate) %>%
+  as.vector() %>%
+  localmoran(., L_msoa.lw) %>%
+  as_tibble()
+
+# check the results
+slice_head(I_msoa_Local_Obesity, n = 5)
+
+# copy 2 useful column back into the OB_SU_map
+OB_SU_map <- OB_SU_map %>%
+  mutate(obesity_I = as.numeric(I_msoa_Local_Obesity$Ii)) %>%
+  mutate(obesity_Iz = as.numeric(I_msoa_Local_Obesity$Z.Ii))
+
+```
+
+Now I can plot a map of local Moran's I outputs.
+
+I will set the breaks manually based on the rule that data points >2.58 or <-2.58 standard deviations away from the mean are significant at the 99% level (<1% chance that autocorrelation not present); >1.96 - <2.58 or <-1.96 to >-2.58 standard deviations are significant at the 95% level (<5% change that autocorrelation not present). >1.65 = 90% etc.
+
+```{r}
+# set breaks
+breaks3<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
+
+# create a new diverging colour brewer palette and reverse the order,so higher values correspond to red
+MoranColours<- rev(brewer.pal(8, "RdGy"))
+
+# plot the map
+tmap_mode("view")
+tmap_options(check.and.fix = TRUE)
+tm_shape(OB_SU_map) + tm_polygons("obesity_Iz", 
+                                   style = "fixed",
+                                   breaks = breaks3,
+                                   palette = MoranColours,
+                                   midpoint = NA,
+                                   title = "Local Moran's I, Obesity Rate")
+```
+
+At the beginning of this section, I want to explore the patters of variation of obesity rate. However, unfortunately, both global Moran's I and local Moran's I show that there is almost no spatial autocorrelation in obesity rate. Well, actually, it is also a kind of pattern. Now I know that the obesity rate is not related to space in London at least in this analysis.
+
+# Reflection
+
+Today, I have complete three tasks.
+
+* First, I make two thematic maps which both show that people who live in the edge area of London tend to consume more sugar and have higher obesity rate than people who live in the central area of London. Therefore, in order to explain this spatial patterns, I finish my second task.
+
+* Second, I build a single linear regression model to examine the relationship between obesity rate and sugar consumption. The results show that there is a positive correlation between these two variables.
+
+* Third, I want to further study the spatial patterns of obesity rate and want to find a spatial factor to explain the patterns of obesity rate. Although the results show that there is no significant spatial autocorrelation in obesity rates, it doesn't mean that there is no spatial patterns in obesity rate.
+
+From my perspective, people who live in the edge of London have a lower income than people who live in the central area of London, so their financial situation may not support them to have a balanced and healthy diet which might cause the high obesity rate. In addition, these people may work hard to make a living and they may suffer from the huge life and work pressures, so they might eat more desserts and junk food to gain a comfort. Essentially, the spatial patterns of obesity show the inequalities and disparity in London. Wealthy people always have access to more resources and enjoy more social benefits. In contrast, the poor are struggling at the bottom of social ladder. I think it is an issue that deserves to be taken seriously. I also hope that the social disparity can be gradually narrowed in the future!  
+
+# Data Sources
+
+* Tesco supermarket grocery data (limited to certain months from 2015) - https://figshare.com/articles/dataset/Area-level_grocery_purchases/7796666?backTo=/collections/Tesco_Grocery_1_0/4769354
+* London Statistical GIS boundaries - https://data.london.gov.uk/dataset/statistical-gis-boundary-files-london
+* Complete MSOA level obesity data - https://data.london.gov.uk/dataset/msoa-atlas
+
+
+
+
+
+
+
